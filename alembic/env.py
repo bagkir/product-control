@@ -10,15 +10,12 @@ from alembic import context
 # Импортировать config и Base
 from src.core.config import settings
 from src.core.database import Base
-
-# Импортировать все модели (ОБЯЗАТЕЛЬНО!)
 from src.data.models import *  # noqa
 
 # this is the Alembic Config object
 config = context.config
 
 # Установить database_url из settings
-# ⚠️ ВАЖНО: Убираем +asyncpg для alembic, используем postgresql:// вместо postgresql+asyncpg://
 config.set_main_option("sqlalchemy.url", str(settings.DATABASE_URL))
 
 # Interpret the config file for Python logging

@@ -4,11 +4,24 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.api.v1.routers import (
+    batches_router,
+    products_router,
+    tasks_router,
+    webhooks_router,
+)
+from src.api.v1.routers.analytics import router as analytics_router
 from src.core.config import settings
 from src.core.database import check_db_connection, dispose_engine
+from src.core.exceptions import (
+    register_exception_handlers,
+    register_unhandled_exception_handler,
+)
 from src.core.logging_config import setup_logging
+from src.core.redis_client import close_redis
 
 logger = logging.getLogger(__name__)
+
 
 # ========== LIFECYCLE EVENTS ==========
 
@@ -30,10 +43,11 @@ async def lifespan(app: FastAPI):
     logger.info("Application started")
 
     yield
-
+    await close_redis()
     await dispose_engine()
 
     logger.info("Application stopped")
+
 
 # ========== CREATE APP ==========
 
@@ -57,6 +71,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ========== EXCEPTION HANDLERS ==========
+
+register_exception_handlers(app)
+register_unhandled_exception_handler(app)
+
+# ========== ROUTERS ==========
+
+# Версия 1 API
+app.include_router(router=batches_router, prefix=settings.API_V1_PREFIX)
+
+app.include_router(router=products_router, prefix=settings.API_V1_PREFIX)
+
+app.include_router(router=tasks_router, prefix=settings.API_V1_PREFIX)
+
+app.include_router(router=webhooks_router, prefix=settings.API_V1_PREFIX)
+app.include_router(analytics_router, prefix=settings.API_V1_PREFIX)
+
+
 @app.get("/")
 async def root():
     """Корневой эндпоинт."""
@@ -72,4 +104,5 @@ async def health_check():
 # Для запуска через python -m
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
