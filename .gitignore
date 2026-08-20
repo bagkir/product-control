@@ -98,3 +98,4 @@ pyproject.toml
 app/data/
 app/services/audio_transcription/audio_files/
 app/services/audio_transcription/results/
+celerybeat-schedule

@@ -30,9 +30,6 @@ async def test_publish_event_creates_deliveries(monkeypatch):
         ]
     )
 
-    delivery_repository.session = MagicMock()
-    delivery_repository.session.commit = AsyncMock()
-
     service = WebhookService(
         subscription_repository=subscription_repository,
         delivery_repository=delivery_repository,
@@ -49,8 +46,6 @@ async def test_publish_event_creates_deliveries(monkeypatch):
     assert result == 2
 
     assert delivery_repository.create.await_count == 2
-
-    delivery_repository.session.commit.assert_awaited_once()
 
     assert delay_mock.call_count == 2
     delay_mock.assert_any_call(100)

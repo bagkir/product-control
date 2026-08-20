@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     REDOC_URL: str = "/redoc"
     CORS_ORIGINS: list[str] = ["*"]
 
-    API_KEY: str = "change-me-in-production"
+    API_KEY: str
     API_KEY_HEADER: str = "X-API-Key"
 
     model_config = SettingsConfigDict(

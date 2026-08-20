@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 ReportFormat = Literal["excel", "pdf"]
 
@@ -16,4 +16,3 @@ class ReportResult(BaseModel):
 
 class ReportCreate(BaseModel):
     format: ReportFormat = "excel"
-    email: EmailStr | None = None

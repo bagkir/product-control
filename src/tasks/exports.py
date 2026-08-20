@@ -13,10 +13,7 @@ from src.utils.data_parser import _parse_date
 EXPORTS_BUCKET = "exports"
 
 
-@celery_app.task(
-    bind=True,
-    name="tasks.export_batches_to_file",
-)
+@celery_app.task(bind=True, name="tasks.export_batches_to_file", max_retries=3)
 def export_batches_to_file(
     self: Task,
     filters: dict,
@@ -69,7 +66,8 @@ async def _export_batches_to_file_async(
         try:
             storage = MinIOService()
 
-            file_url = storage.upload_file(
+            file_url = await asyncio.to_thread(
+                storage.upload_file,
                 bucket=EXPORTS_BUCKET,
                 file_path=file_path,
                 object_name=file_name,

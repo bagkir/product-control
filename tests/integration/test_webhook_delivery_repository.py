@@ -1,39 +1,37 @@
-from datetime import date, datetime, timezone
-
 import pytest
 
-from src.data.repositories.batch_repository import BatchRepository
-from src.data.repositories.work_center_repository import (
-    WorkCenterRepository,
+from src.data.repositories.webhook_deliveries_repository import (
+    WebhookDeliveryRepository,
+)
+from src.data.repositories.webhook_subscription_repository import (
+    WebhookSubscriptionRepository,
 )
 
 
 @pytest.mark.asyncio
-async def test_create_and_get_batch(clean_db):
-    work_center_repository = WorkCenterRepository(clean_db)
+async def test_get_pending_retries(clean_db):
+    subscription_repository = WebhookSubscriptionRepository(clean_db)
 
-    work_center = await work_center_repository.create(
-        identifier="RC-001",
-        name="Цех №1",
+    subscription = await subscription_repository.create(
+        url="https://example.com/webhook",
+        events=["batch_created"],
+        secret_key="secret",
+        retry_count=3,
+        timeout=10,
+        is_active=True,
     )
 
-    repository = BatchRepository(clean_db)
+    delivery_repository = WebhookDeliveryRepository(clean_db)
 
-    batch = await repository.create(
-        is_closed=False,
-        task_description="Изготовить 1000 болтов",
-        work_center_id=work_center.id,
-        shift="1 смена",
-        team="Бригада Иванова",
-        batch_number=22222,
-        batch_date=date(2026, 8, 18),
-        nomenclature="Болт М10",
-        ekn_code="EKN-123",
-        shift_start=datetime(2026, 8, 18, 8, 0, tzinfo=timezone.utc),
-        shift_end=datetime(2026, 8, 18, 20, 0, tzinfo=timezone.utc),
+    delivery = await delivery_repository.create(
+        subscription_id=subscription.id,
+        event_type="batch_created",
+        payload={"event": "batch_created"},
+        status="failed",
+        attempts=1,
     )
 
-    found = await repository.get_by_id(batch.id)
+    result = await delivery_repository.get_pending_retries()
 
-    assert found is not None
-    assert found.batch_number == 22222
+    assert len(result) == 1
+    assert result[0].id == delivery.id

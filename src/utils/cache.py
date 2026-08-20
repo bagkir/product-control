@@ -4,12 +4,24 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
+from pydantic import BaseModel
+
 from src.core.redis_client import get_redis
 
 
 def make_hash_key(**params: Any) -> str:
+    def _serialize(val: Any) -> Any:
+        if isinstance(val, BaseModel):
+            return val.model_dump(mode="json")
+        if hasattr(val, "items") and callable(val.items):
+            return {k: _serialize(v) for k, v in val.items()}
+        if isinstance(val, (list, tuple)):
+            return [_serialize(v) for v in val]
+        return val
+
+    serialized = {k: _serialize(v) for k, v in params.items()}
     raw = json.dumps(
-        params,
+        serialized,
         sort_keys=True,
         default=str,
         separators=(",", ":"),

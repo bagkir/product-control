@@ -1,4 +1,4 @@
-from src.core.exceptions import AlreadyExistsException, NotFoundException
+from src.core.exceptions import AlreadyExistsException, NotFoundException, AppException
 
 
 class BatchNotFoundException(NotFoundException):
@@ -25,13 +25,18 @@ class WorkCenterNotFoundException(NotFoundException):
         super().__init__(resource="WorkCenter", identifier=identifier)
 
 
-# src/domain/exceptions/batch_exception.py
+class BatchMoreThen100(AppException):
+    """
+    Партия содержит больше 100 продуктов — синхронная агрегация
+    (POST /batches/{id}/aggregate) не предназначена для такого объёма,
+    нужно использовать POST /batches/{id}/aggregate-async.
+    """
 
-
-class BatchMoreThen100(Exception):
     def __init__(self, batch_id: int, count: int):
-        self.batch_id = batch_id
-        self.count = count
         super().__init__(
-            f"Batch {batch_id} has {count} products, which exceeds 100. Use async aggregation endpoint."
+            message=(
+                f"Batch {batch_id} has {count} products (>100) — "
+                f"use POST /batches/{batch_id}/aggregate-async instead"
+            ),
+            status_code=400,
         )
