@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -26,10 +27,6 @@ from src.domain.exceptions.batch_exception import (
 )
 from src.domain.services.webhook_service import WebhookService
 from src.storage.minio_service import MinIOService
-from src.tasks.aggregation import aggregate_products_batch
-from src.tasks.exports import export_batches_to_file
-from src.tasks.imports import import_batches_from_file
-from src.tasks.reports import generate_batch_report
 from src.utils.cache import cached, invalidate_cache_key, invalidate_cache_pattern
 from src.utils.datetime_utils import utc_now_naive
 
@@ -296,6 +293,7 @@ class BatchService:
         чтобы domain-слой не тянул celery_app при обычном импорте сервиса
         (например в юнит-тестах, где Celery/RabbitMQ не подняты).
         """
+        from src.tasks.aggregation import aggregate_products_batch
 
         batch = await self.batch_repository.get_by_id(batch_id)
         if batch is None:
@@ -315,6 +313,8 @@ class BatchService:
     async def start_generate_report(
         self, batch_id: int, data: "ReportCreate"
     ) -> "TaskResponse":
+        from src.tasks.reports import generate_batch_report
+
         batch = await self.batch_repository.get_by_id(batch_id)
         if batch is None:
             raise BatchNotFoundException(batch_id)
@@ -322,7 +322,6 @@ class BatchService:
         task = generate_batch_report.delay(
             batch_id=batch_id,
             format=data.format,
-            user_email=data.email,
         )
 
         return TaskResponse(
@@ -335,32 +334,41 @@ class BatchService:
         """
         Загрузить файл в MinIO и запустить Celery-задачу импорта.
         """
-        # Проверка расширения
+        from src.tasks.imports import import_batches_from_file
+
         ext = os.path.splitext(file.filename)[1].lower()
         if ext not in (".xlsx", ".csv"):
             raise ValueError("Only .xlsx or .csv files are supported")
 
-        # Сохраняем во временный файл
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
+        content = await file.read()
 
-        try:
-            storage = MinIOService()
-            object_name = f"imports/{uuid.uuid4()}{ext}"
-            # Получаем pre-signed URL для скачивания (задача скачает файл по этому URL)
-            file_url = storage.upload_file(
-                bucket="imports",
-                file_path=tmp_path,
-                object_name=object_name,
-                expires_days=1,  # достаточно на время выполнения задачи
-            )
-        finally:
-            os.unlink(tmp_path)  # удаляем временный файл
+        def _write_and_upload() -> str:
+            """
+            Синхронная запись во временный файл + синхронный minio-py клиент —
+            выполняется в отдельном треде через to_thread ниже, чтобы не
+            блокировать event loop FastAPI на время диска и сетевого похода
+            в MinIO (раньше это блокировало ВСЕХ пользователей API на время
+            аплоада большого xlsx).
+            """
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
 
-        # Запускаем Celery-задачу
-        task = import_batches_from_file.delay(file_url=file_url, user_id=None)
+            try:
+                storage = MinIOService()
+                object_name = f"imports/{uuid.uuid4()}{ext}"
+                return storage.upload_file(
+                    bucket="imports",
+                    file_path=tmp_path,
+                    object_name=object_name,
+                    expires_days=1,
+                )
+            finally:
+                os.unlink(tmp_path)
+
+        file_url = await asyncio.to_thread(_write_and_upload)
+
+        task = import_batches_from_file.delay(file_url=file_url)
         return TaskResponse(
             task_id=task.id,
             status="PENDING",
@@ -371,6 +379,8 @@ class BatchService:
         """
         Запустить Celery-задачу экспорта.
         """
+        from src.tasks.exports import export_batches_to_file
+
         task = export_batches_to_file.delay(
             filters=payload.filters.model_dump(mode="json", exclude_unset=True),
             format=payload.format,

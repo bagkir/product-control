@@ -22,6 +22,7 @@ class WebhookDelivery(Base):
     response_status: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     response_body: Mapped[str | None] = mapped_column(String(), nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(default=None)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(), server_default=func.now())
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)

@@ -10,6 +10,7 @@ from src.api.v1.schemas.batch import (
     BatchListResponse,
     BatchResponse,
     BatchUpdate,
+    AggregationResponse,
 )
 from src.api.v1.schemas.product import AggregateAsyncRequest
 from src.api.v1.schemas.report import ReportCreate
@@ -52,7 +53,11 @@ async def list_batches(
     )
 
 
-@router.post(path="/{batch_id}/aggregate")
+@router.post(
+    path="/{batch_id}/aggregate",
+    response_model=AggregationResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def aggregate_batch(
     batch_id: int,
     service: BatchServiceDep,

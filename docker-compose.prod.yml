@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   db:
     image: postgres:15
@@ -8,8 +10,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "${POSTGRES_PORT}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,6 +19,9 @@ services:
       retries: 5
     mem_limit: 512m
     cpus: '1.0'
+    restart: always
+    networks:
+      - backend_net
 
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
@@ -28,9 +31,6 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
-    ports:
-      - "5672:5672"    # AMQP
-      - "15672:15672"  # Management UI
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -38,12 +38,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: always
+    networks:
+      - backend_net
 
   redis:
     image: redis:7-alpine
     container_name: redis
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
@@ -54,6 +55,9 @@ services:
       retries: 5
     mem_limit: 512m
     cpus: '1.0'
+    restart: always
+    networks:
+      - backend_net
 
   minio:
     image: minio/minio:latest
@@ -63,9 +67,6 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
-    ports:
-      - "9000:9000"   # API
-      - "9001:9001"   # Console
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
@@ -76,6 +77,9 @@ services:
       retries: 5
     mem_limit: 512m
     cpus: '1.0'
+    restart: always
+    networks:
+      - backend_net
 
   minio-init:
     build: .
@@ -85,13 +89,13 @@ services:
       - .env
     environment:
       PYTHONPATH: /app/src
-    volumes:
-      - ./:/app
     command: python scripts/init_minio.py
     depends_on:
       minio:
         condition: service_healthy
     restart: "no"
+    networks:
+      - backend_net
 
   migrate:
     build: .
@@ -101,13 +105,13 @@ services:
       - .env
     environment:
       PYTHONPATH: /app/src
-    volumes:
-      - ./:/app
     command: alembic upgrade head
     depends_on:
       db:
         condition: service_healthy
     restart: "no"
+    networks:
+      - backend_net
 
   backend:
     build: .
@@ -117,9 +121,7 @@ services:
       - .env
     ports:
       - "${WEB_PORT}:8000"
-    volumes:
-      - ./:/app
-    command: ./entrypoint.sh uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: ./entrypoint.sh uvicorn main:app --host 0.0.0.0 --port 8000
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -133,6 +135,9 @@ services:
       PYTHONPATH: /app/src
     mem_limit: 512m
     cpus: '1.0'
+    restart: always
+    networks:
+      - backend_net
 
   celery_worker:
     build: .
@@ -140,8 +145,6 @@ services:
     container_name: celery_worker
     env_file:
       - .env
-    volumes:
-      - ./:/app
     command: celery -A src.celery_app worker --loglevel=info --concurrency=4
     depends_on:
       migrate:
@@ -156,6 +159,9 @@ services:
       PYTHONPATH: /app/src
     mem_limit: 512m
     cpus: '1.0'
+    restart: always
+    networks:
+      - backend_net
 
   celery_beat:
     build: .
@@ -163,8 +169,6 @@ services:
     container_name: celery_beat
     env_file:
       - .env
-    volumes:
-      - ./:/app
     command: celery -A src.celery_app beat --loglevel=info
     depends_on:
       migrate:
@@ -177,6 +181,9 @@ services:
       PYTHONPATH: /app/src
     mem_limit: 512m
     cpus: '1.0'
+    restart: always
+    networks:
+      - backend_net
 
   flower:
     build: .
@@ -193,9 +200,16 @@ services:
       PYTHONPATH: /app/src
     mem_limit: 512m
     cpus: '1.0'
+    restart: always
+    networks:
+      - backend_net
 
 volumes:
   db_data:
   rabbitmq_data:
   redis_data:
   minio_data:
+
+networks:
+  backend_net:
+    driver: bridge

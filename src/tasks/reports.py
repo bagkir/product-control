@@ -20,13 +20,8 @@ REPORTS_BUCKET = "reports"
 
 
 @celery_app.task(bind=True, max_retries=3, name="tasks.generate_batch_report")
-def generate_batch_report(
-    self,
-    batch_id: int,
-    format: str = "excel",
-    user_email: str | None = None,
-) -> dict:
-    return asyncio.run(_generate_batch_report_async(self, batch_id, format, user_email))
+def generate_batch_report(self, batch_id: int, format: str = "excel") -> dict:
+    return asyncio.run(_generate_batch_report_async(self, batch_id, format))
 
 
 async def _generate_batch_report_async(task, batch_id: int, format: str) -> dict:
