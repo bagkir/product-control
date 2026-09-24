@@ -144,8 +144,6 @@ class WebhookService:
 
             delivery_ids.append(delivery.id)
 
-        await self.delivery_repository.session.commit()
-
         for delivery_id in delivery_ids:
             send_webhook_delivery.delay(delivery_id)
 

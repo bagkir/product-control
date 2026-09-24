@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,14 +37,14 @@ class WebhookDeliveryRepository(BaseRepository[WebhookDelivery]):
 
     async def get_pending_retries(self) -> list[WebhookDelivery]:
         """
-        Доставки, которым стоит попробовать отправиться снова:
-        - status == "failed" и попыток ещё не исчерпано (< subscription.retry_count)
-        - ИЛИ status == "pending" — подстраховка на случай, если исходный
-          send_webhook_delivery.delay() был вызван ДО commit транзакции,
-          создавшей эту запись, и воркер не нашёл строку по id
-          (см. race condition ниже). Раз в 15 минут подбираем то, что
-          могло "потеряться" в этом окне.
+        Доставки, готовые к повторной отправке:
+        - статус failed или pending
+        - attempts < subscription.retry_count
+        - прошло достаточно времени с последней попытки (экспоненциальный backoff)
         """
+        now = datetime.now(UTC).replace(tzinfo=None)
+        MAX_BACKOFF_MINUTES = 60
+
         stmt = (
             select(WebhookDelivery)
             .join(
@@ -57,7 +57,20 @@ class WebhookDeliveryRepository(BaseRepository[WebhookDelivery]):
             )
         )
         result = await self.session.execute(stmt)
-        return list(result.scalars().all())
+        deliveries = list(result.scalars().all())
+
+        ready = []
+        for d in deliveries:
+            if d.last_attempt_at is None:
+                ready.append(d)
+                continue
+
+            delay_minutes = min(2**d.attempts, MAX_BACKOFF_MINUTES)
+            next_attempt_at = d.last_attempt_at + timedelta(minutes=delay_minutes)
+            if now >= next_attempt_at:
+                ready.append(d)
+
+        return ready
 
     async def mark_success(
         self,
@@ -71,6 +84,7 @@ class WebhookDeliveryRepository(BaseRepository[WebhookDelivery]):
             response_status=response_status,
             response_body=response_body,
             delivered_at=datetime.now(UTC).replace(tzinfo=None),
+            last_attempt_at=datetime.now(UTC).replace(tzinfo=None),
         )
 
     async def mark_failed(
@@ -80,7 +94,6 @@ class WebhookDeliveryRepository(BaseRepository[WebhookDelivery]):
         response_status: int | None = None,
     ) -> WebhookDelivery | None:
         instance = await self.get_by_id(delivery_id)
-
         if instance is None:
             return None
 
@@ -90,6 +103,7 @@ class WebhookDeliveryRepository(BaseRepository[WebhookDelivery]):
             attempts=instance.attempts + 1,
             error_message=error_message,
             response_status=response_status,
+            last_attempt_at=datetime.now(UTC).replace(tzinfo=None),
         )
 
     async def count_by_subscription(

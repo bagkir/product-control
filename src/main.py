@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.v1.routers import (
@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="REST API для управления библиотечным каталогом",
+    description="REST API для системы контроля заданий на выпуск продукции",
     version="1.0.0",
     docs_url=settings.DOCS_URL,
     redoc_url=settings.REDOC_URL,
@@ -66,7 +66,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -96,9 +96,13 @@ async def root():
 
 
 @app.get("/health")
-async def health_check():
-    """Health check эндпоинт."""
-    return {"status": "healthy"}
+async def health_check(response: Response):
+    """проверяет доступность БД."""
+    db_ok = await check_db_connection()
+    if not db_ok:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "unhealthy", "database": "unreachable"}
+    return {"status": "healthy", "database": "ok"}
 
 
 # Для запуска через python -m

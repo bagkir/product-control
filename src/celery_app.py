@@ -44,4 +44,6 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     result_expires=3600,
+    task_soft_time_limit=300,
+    task_time_limit=330,
 )

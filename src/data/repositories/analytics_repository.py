@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,20 +11,28 @@ class AnalyticsRepository:
         self.session = session
 
     async def get_dashboard_statistics(self) -> dict:
-        total_batches = await self._scalar(select(func.count(Batch.id)))
-
-        active_batches = await self._scalar(
-            select(func.count(Batch.id)).where(Batch.is_closed.is_(False))
+        summary_query = (
+            select(
+                func.count(Batch.id).label("total_batches"),
+                func.sum(case((Batch.is_closed.is_(False), 1), else_=0)).label(
+                    "active_batches"
+                ),
+                func.count(Product.id).label("total_products"),
+                func.sum(case((Product.is_aggregated.is_(True), 1), else_=0)).label(
+                    "aggregated_products"
+                ),
+            )
+            .select_from(Batch)
+            .outerjoin(Product, Product.batch_id == Batch.id)
         )
 
+        result = await self.session.execute(summary_query)
+        row = result.first()
+        total_batches = row.total_batches or 0
+        active_batches = row.active_batches or 0
         closed_batches = total_batches - active_batches
-
-        total_products = await self._scalar(select(func.count(Product.id)))
-
-        aggregated_products = await self._scalar(
-            select(func.count(Product.id)).where(Product.is_aggregated.is_(True))
-        )
-
+        total_products = row.total_products or 0
+        aggregated_products = row.aggregated_products or 0
         aggregation_rate = (
             round(aggregated_products / total_products * 100, 2)
             if total_products
@@ -51,25 +59,30 @@ class AnalyticsRepository:
 
     async def _get_today_statistics(self) -> dict:
         today = datetime.now(timezone.utc).date()
+        tomorrow = today + timedelta(days=1)
 
+        # Используем диапазон вместо func.date()
         batches_created = await self._scalar(
-            select(func.count(Batch.id)).where(Batch.batch_date == today)
+            select(func.count(Batch.id)).where(
+                Batch.batch_date >= today, Batch.batch_date < tomorrow
+            )
         )
-
         batches_closed = await self._scalar(
             select(func.count(Batch.id)).where(
-                Batch.batch_date == today,
+                Batch.batch_date >= today,
+                Batch.batch_date < tomorrow,
                 Batch.is_closed.is_(True),
             )
         )
-
         products_added = await self._scalar(
-            select(func.count(Product.id)).where(func.date(Product.created_at) == today)
+            select(func.count(Product.id)).where(
+                Product.created_at >= today, Product.created_at < tomorrow
+            )
         )
-
         products_aggregated = await self._scalar(
             select(func.count(Product.id)).where(
-                func.date(Product.aggregated_at) == today,
+                Product.aggregated_at >= today,
+                Product.aggregated_at < tomorrow,
                 Product.is_aggregated.is_(True),
             )
         )

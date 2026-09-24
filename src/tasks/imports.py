@@ -32,13 +32,11 @@ IMPORTS_BUCKET = "imports"
 def import_batches_from_file(
     self: Task,
     file_url: str,
-    user_id: int,
 ) -> dict:
     return asyncio.run(
         _import_batches_from_file_async(
             self,
             file_url,
-            user_id,
         )
     )
 

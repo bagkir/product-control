@@ -133,3 +133,10 @@ class BatchExportFilters(BaseModel):
 class BatchExportRequest(BaseModel):
     format: str = Field(default="excel", pattern="^(excel|csv)$")
     filters: BatchExportFilters = Field(default_factory=BatchExportFilters)
+
+
+class AggregationResponse(BaseModel):
+    status: str
+    total_products: int
+    aggregated: int
+    already_aggregated: int
